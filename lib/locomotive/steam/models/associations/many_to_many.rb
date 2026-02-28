@@ -15,27 +15,28 @@ module Locomotive::Steam
         @repository
       end
 
-      # Override to re-sort results by the stored ID array order.
-      # MongoDB's $in operator does not preserve array order, so
-      # we intercept enumeration methods and post-sort to match
-      # the order saved by the engine.
+      # Liquid calls .to_liquid on the resolved variable before iterating.
+      # Without this method, to_liquid falls through method_missing into
+      # repository.to_liquid which returns a ContentEntryCollection that
+      # fetches entries in content type default order, discarding the
+      # stored ID array order. By defining to_liquid directly, we
+      # materialize entries in the correct order and return a plain array.
+      # Array#to_liquid returns self, so Liquid iterates it directly.
+      def to_liquid
+        __call_block_once__
+        _reorder_by_target_ids(__load__.all.to_a)
+      end
+
       def method_missing(name, *args, &block)
         __call_block_once__
 
         if name == :each && block
-          # Materialize all entries, sort by stored ID order, then yield
           entries = __load__.all.to_a
           _reorder_by_target_ids(entries).each(&block)
         elsif name == :to_a
           _reorder_by_target_ids(__load__.all.to_a)
         else
-          result = __load__.try(:send, name, *args, &block)
-
-          if result.is_a?(Array) && result.first.respond_to?(:_id)
-            _reorder_by_target_ids(result)
-          else
-            result
-          end
+          __load__.try(:send, name, *args, &block)
         end
       end
 
