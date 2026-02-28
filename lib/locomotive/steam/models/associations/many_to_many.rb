@@ -17,16 +17,25 @@ module Locomotive::Steam
 
       # Override to re-sort results by the stored ID array order.
       # MongoDB's $in operator does not preserve array order, so
-      # we post-sort to match the order saved by the engine.
+      # we intercept enumeration methods and post-sort to match
+      # the order saved by the engine.
       def method_missing(name, *args, &block)
         __call_block_once__
 
-        result = __load__.try(:send, name, *args, &block)
-
-        if result.is_a?(Array) && result.first.respond_to?(:_id)
-          _reorder_by_target_ids(result)
+        if name == :each && block
+          # Materialize all entries, sort by stored ID order, then yield
+          entries = __load__.all.to_a
+          _reorder_by_target_ids(entries).each(&block)
+        elsif name == :to_a
+          _reorder_by_target_ids(__load__.all.to_a)
         else
-          result
+          result = __load__.try(:send, name, *args, &block)
+
+          if result.is_a?(Array) && result.first.respond_to?(:_id)
+            _reorder_by_target_ids(result)
+          else
+            result
+          end
         end
       end
 
